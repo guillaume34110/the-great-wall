@@ -1,0 +1,7 @@
+tools/
+data/
+.git/
+.github/
+**/__pycache__/
+**/*.pyc
+docker-compose.override.yml

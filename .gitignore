@@ -1,0 +1,25 @@
+# Runtime state
+data/
+!data/.gitkeep
+
+# Local docker override
+docker-compose.override.yml
+
+# Engine build artifacts (vendored sources, never build artifacts)
+engine/build/
+engine/CMakeCache.txt
+engine/CMakeFiles/
+engine/cmake_install.cmake
+engine/Makefile
+
+# Python (sprite_gen)
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# OS / editors
+.DS_Store
+.vscode/
+.idea/
+*.swp

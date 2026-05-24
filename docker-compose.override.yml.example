@@ -1,0 +1,11 @@
+# Renomme en docker-compose.override.yml pour le dev local sur Mac
+# (Docker Desktop bloque bind mounts hors File Sharing autorisé).
+# Coolify (Linux) utilise docker-compose.yml seul, sans override.
+services:
+  tgw:
+    volumes: !override
+      - tgw_data:/var/lib/minetest
+      - /tmp/tgw-minetest.conf:/etc/minetest/minetest.conf:ro
+
+volumes:
+  tgw_data:

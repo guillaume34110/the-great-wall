@@ -1,0 +1,30 @@
+services:
+  tgw:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: the-great-wall
+    restart: unless-stopped
+    ports:
+      - "30001:30000/udp"
+      - "127.0.0.1:30001:30000/tcp"
+    environment:
+      # WIPE=1 : reset monde au prochain démarrage. Hall of Fame préservé
+      # car stocké hors-world. Défaut 0 : conserve l'état entre deploys.
+      WIPE: ${WIPE:-0}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        W=/var/lib/minetest/.minetest/worlds/world
+        if [ "$$WIPE" = "1" ]; then
+          rm -f "$$W/map.sqlite" "$$W/map_meta.txt" "$$W/auth.sqlite" \
+            "$$W/env_meta.txt" "$$W/mod_storage.sqlite" "$$W/force_loaded.txt"
+          rm -rf "$$W/players"
+        fi
+        exec /usr/local/bin/entrypoint.sh \
+          --config /etc/minetest/minetest.conf \
+          --world /var/lib/minetest/.minetest/worlds/world \
+          --gameid the_great_wall
+    volumes:
+      - ./data:/var/lib/minetest
