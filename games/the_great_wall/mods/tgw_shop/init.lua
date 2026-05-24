@@ -23,6 +23,22 @@ tgw_shop.items = {
         end,
     },
     {
+        id = "pistol",   label = "9mm Pistol",       cost = 25, wallet = "personal",
+        effect = function(name)
+            local p = core.get_player_by_name(name); if not p then return false end
+            p:get_inventory():add_item("main", "tgw_combat:pistol")
+            return true
+        end,
+    },
+    {
+        id = "shotgun",  label = "Border Shotgun",   cost = 40, wallet = "personal",
+        effect = function(name)
+            local p = core.get_player_by_name(name); if not p then return false end
+            p:get_inventory():add_item("main", "tgw_combat:shotgun")
+            return true
+        end,
+    },
+    {
         id = "net",      label = "Capture Net",      cost = 8,  wallet = "personal",
         effect = function(name)
             local p = core.get_player_by_name(name); if not p then return false end
@@ -43,9 +59,20 @@ tgw_shop.items = {
         effect = function()
             if not tgw_wall then return false end
             local b = tgw_map.get_wall_bounds()
-            for x = b.x_min, b.x_max do
-                for y = b.y_min, b.y_max do
-                    tgw_wall.repair({ x = x, y = y, z = b.z })
+            local t = b.thick
+            local segments = {
+                { x1 = b.x_min,         x2 = b.x_max,         z1 = b.z_min,         z2 = b.z_min + t - 1 },
+                { x1 = b.x_min,         x2 = b.x_max,         z1 = b.z_max - t + 1, z2 = b.z_max         },
+                { x1 = b.x_min,         x2 = b.x_min + t - 1, z1 = b.z_min,         z2 = b.z_max         },
+                { x1 = b.x_max - t + 1, x2 = b.x_max,         z1 = b.z_min,         z2 = b.z_max         },
+            }
+            for _, s in ipairs(segments) do
+                for x = s.x1, s.x2 do
+                    for z = s.z1, s.z2 do
+                        for y = b.y_min, b.y_max do
+                            tgw_wall.repair({ x = x, y = y, z = z })
+                        end
+                    end
                 end
             end
             return true

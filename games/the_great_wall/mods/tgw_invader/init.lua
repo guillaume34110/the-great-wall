@@ -140,8 +140,8 @@ local function make_entity_def(type_name, stats)
             local front_node = node_at(ahead)
 
             if is_obstacle(front_node) then
-                -- Mur du jeu ? on tape
-                if front_node.name == "tgw_wall:stone" then
+                -- Mur du jeu ? on tape (stone ou tour)
+                if front_node.name == "tgw_wall:stone" or front_node.name == "tgw_wall:tower" then
                     if self._attack_timer == 0 then
                         local wall_pos = vector.round(ahead)
                         tgw_wall.damage(wall_pos, stats.wall_dmg)
