@@ -13,7 +13,8 @@ end
 
 dofile(lumia_chargen.modpath .. "/races.lua")
 dofile(lumia_chargen.modpath .. "/signs.lua")
-dofile(lumia_chargen.modpath .. "/apply.lua")
-dofile(lumia_chargen.modpath .. "/formspec.lua")
+-- apply.lua + formspec.lua : RPG chargen lourd hérité lumiaOpen.
+-- Désactivé dans tgw — sélection guardian gérée par tgw_trump_skin.
+-- races.lua reste chargé (utilisé par tgw_invader pour la génération d'ennemis).
 
 log("action", "lumia_chargen chargé")

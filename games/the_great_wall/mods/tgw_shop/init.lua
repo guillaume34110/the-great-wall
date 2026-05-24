@@ -1,4 +1,6 @@
--- tgw_shop : node "comptoir" dans la maison. Rightclick → formspec
+-- tgw_shop : 2 comptoirs.
+--   weapons   : armes & utilitaires (counters dans maison + pied de tours)
+--   materials : matériaux & pièges (counter dédié près de la maison)
 -- dual-wallet (perso pour items, commun pour réparation mur/porte).
 
 local S = core.get_translator("tgw_shop")
@@ -8,14 +10,29 @@ tgw_shop.S = S
 local storage = core.get_mod_storage()
 
 -- ---------------------------------------------------------------------------
--- Catalogue
+-- Helper : effet "donner un item"
+-- ---------------------------------------------------------------------------
+local function give(item)
+    return function(name)
+        local p = core.get_player_by_name(name); if not p then return false end
+        p:get_inventory():add_item("main", item)
+        return true
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Catalogues
 -- ---------------------------------------------------------------------------
 
 -- wallet : "personal" | "shared"
 -- effect(player_name) → bool (true = appliqué)
-tgw_shop.items = {
+-- icon_item : itemstring affiché dans la liste (item_image)
+tgw_shop.catalogues = {}
+
+tgw_shop.catalogues.weapons = {
     {
         id = "bat",      label = "Extra Bat",        cost = 10, wallet = "personal",
+        icon_item = "tgw_combat:bat",
         effect = function(name)
             local p = core.get_player_by_name(name); if not p then return false end
             p:get_inventory():add_item("main", "tgw_combat:bat")
@@ -24,6 +41,7 @@ tgw_shop.items = {
     },
     {
         id = "pistol",   label = "9mm Pistol",       cost = 25, wallet = "personal",
+        icon_item = "tgw_combat:pistol",
         effect = function(name)
             local p = core.get_player_by_name(name); if not p then return false end
             p:get_inventory():add_item("main", "tgw_combat:pistol")
@@ -32,6 +50,7 @@ tgw_shop.items = {
     },
     {
         id = "shotgun",  label = "Border Shotgun",   cost = 40, wallet = "personal",
+        icon_item = "tgw_combat:shotgun",
         effect = function(name)
             local p = core.get_player_by_name(name); if not p then return false end
             p:get_inventory():add_item("main", "tgw_combat:shotgun")
@@ -40,6 +59,7 @@ tgw_shop.items = {
     },
     {
         id = "net",      label = "Capture Net",      cost = 8,  wallet = "personal",
+        icon_item = "tgw_capture:net",
         effect = function(name)
             local p = core.get_player_by_name(name); if not p then return false end
             p:get_inventory():add_item("main", "tgw_capture:net")
@@ -48,6 +68,7 @@ tgw_shop.items = {
     },
     {
         id = "cucumber", label = "3x Cucumber",      cost = 4,  wallet = "personal",
+        icon_item = "tgw_combat:cucumber",
         effect = function(name)
             local p = core.get_player_by_name(name); if not p then return false end
             p:get_inventory():add_item("main", "tgw_combat:cucumber 3")
@@ -55,7 +76,66 @@ tgw_shop.items = {
         end,
     },
     {
+        id = "ar",       label = "Eagle AR-15",       cost = 75,  wallet = "personal",
+        icon_item = "tgw_combat:ar",
+        effect = function(name)
+            local p = core.get_player_by_name(name); if not p then return false end
+            p:get_inventory():add_item("main", "tgw_combat:ar")
+            return true
+        end,
+    },
+    {
+        id = "sniper",   label = "Lone Star Sniper",  cost = 110, wallet = "personal",
+        icon_item = "tgw_combat:sniper",
+        effect = function(name)
+            local p = core.get_player_by_name(name); if not p then return false end
+            p:get_inventory():add_item("main", "tgw_combat:sniper")
+            return true
+        end,
+    },
+    {
+        id = "minigun",  label = "Freedom Minigun",   cost = 180, wallet = "personal",
+        icon_item = "tgw_combat:minigun",
+        effect = function(name)
+            local p = core.get_player_by_name(name); if not p then return false end
+            p:get_inventory():add_item("main", "tgw_combat:minigun")
+            return true
+        end,
+    },
+}
+
+-- ---------------------------------------------------------------------------
+-- Matériaux & pièges (counter dédié près de la maison)
+-- ---------------------------------------------------------------------------
+tgw_shop.catalogues.materials = {
+    {
+        id = "trap_spikes", label = "Spike Trap",     cost = 35,  wallet = "personal",
+        icon_item = "tgw_shop:trap_spikes",
+        effect = give("tgw_shop:trap_spikes"),
+    },
+    {
+        id = "trap_wire",   label = "Barbed Wire",    cost = 25,  wallet = "personal",
+        icon_item = "tgw_shop:trap_wire",
+        effect = give("tgw_shop:trap_wire"),
+    },
+    {
+        id = "trap_mine",   label = "Land Mine",      cost = 120, wallet = "personal",
+        icon_item = "tgw_shop:trap_mine",
+        effect = give("tgw_shop:trap_mine"),
+    },
+    {
+        id = "trap_spikes5", label = "5x Spike Trap", cost = 150, wallet = "shared",
+        icon_item = "tgw_shop:trap_spikes",
+        effect = give("tgw_shop:trap_spikes 5"),
+    },
+    {
+        id = "trap_mine3",  label = "3x Land Mine",   cost = 320, wallet = "shared",
+        icon_item = "tgw_shop:trap_mine",
+        effect = give("tgw_shop:trap_mine 3"),
+    },
+    {
         id = "repair_wall", label = "Repair Wall (full)", cost = 50, wallet = "shared",
+        icon_item = "tgw_wall:stone",
         effect = function()
             if not tgw_wall then return false end
             local b = tgw_map.get_wall_bounds()
@@ -80,6 +160,7 @@ tgw_shop.items = {
     },
     {
         id = "repair_door", label = "Repair Door (full)", cost = 80, wallet = "shared",
+        icon_item = "tgw_house:door",
         effect = function()
             if not tgw_house then return false end
             -- Reset porte à HP max via damage négatif n'existe pas → set direct
@@ -103,39 +184,68 @@ tgw_shop.items = {
 -- Formspec
 -- ---------------------------------------------------------------------------
 
-local function build_fs(player_name)
-    local pers = tgw_economy.get_personal(player_name)
-    local shar = tgw_economy.get_shared()
+local CAT_TITLES = {
+    weapons   = S("WEAPONS SHOP"),
+    materials = S("MATERIALS & TRAPS"),
+}
 
-    local fs = "formspec_version[6]size[10,11]" ..
-        "label[0.4,0.5;" .. core.formspec_escape(S("THE GREAT WALL — SHOP")) .. "]" ..
-        "label[0.4,1.1;$ Personal: " .. pers .. "    $ Shared: " .. shar .. "]"
+local function build_fs(player_name, cat_key)
+    local items = tgw_shop.catalogues[cat_key] or tgw_shop.catalogues.weapons
+    local pers  = tgw_economy.get_personal(player_name)
+    local shar  = tgw_economy.get_shared()
 
-    local y = 1.8
-    for _, it in ipairs(tgw_shop.items) do
-        local tag = (it.wallet == "personal") and "[P]" or "[S]"
+    local n      = #items
+    local row_h  = 1.1
+    local top_h  = 1.8
+    local bot_h  = 1.4
+    local height = top_h + n * row_h + bot_h
+    local width  = 11
+
+    local fs = "formspec_version[6]size[" .. width .. "," .. height .. "]" ..
+        "bgcolor[#202028FA;true]" ..
+        "label[0.5,0.5;" .. core.formspec_escape(CAT_TITLES[cat_key] or "SHOP") .. "]" ..
+        "box[0.4,0.9;" .. (width - 0.8) .. ",0.6;#3a3a4a]" ..
+        "label[0.6,1.2;" .. core.formspec_escape(
+            S("Personal") .. ": " .. pers .. " $    |    " ..
+            S("Shared")   .. ": " .. shar .. " $") .. "]"
+
+    local y = top_h
+    for _, it in ipairs(items) do
+        local tag      = (it.wallet == "personal") and S("perso") or S("commun")
+        local row_col  = (it.wallet == "personal") and "#2a3530" or "#352f2a"
         fs = fs ..
-            "label[0.4," .. y .. ";" .. tag .. " " ..
-                core.formspec_escape(S(it.label)) .. " — " .. it.cost .. "$]" ..
-            "button[7.0," .. (y - 0.3) .. ";2.5,0.8;buy_" .. it.id .. ";" ..
+            "box[0.4," .. y .. ";" .. (width - 0.8) .. ",0.9;" .. row_col .. "]" ..
+            "item_image[0.55," .. (y + 0.05) .. ";0.8,0.8;" .. (it.icon_item or "") .. "]" ..
+            "label[1.6," .. (y + 0.45) .. ";" ..
+                core.formspec_escape(S(it.label)) .. "]" ..
+            "label[6.3," .. (y + 0.45) .. ";" .. it.cost .. " $]" ..
+            "label[7.4," .. (y + 0.45) .. ";" ..
+                core.formspec_escape("(" .. tag .. ")") .. "]" ..
+            "button[8.7," .. (y + 0.05) .. ";1.9,0.8;buy_" .. it.id .. ";" ..
                 core.formspec_escape(S("Buy")) .. "]"
-        y = y + 0.9
+        y = y + row_h
     end
 
-    fs = fs .. "button_exit[3.5,10.0;3,0.8;close;" .. core.formspec_escape(S("Close")) .. "]"
+    fs = fs .. "button_exit[" .. ((width - 3) / 2) .. "," .. (y + 0.3) .. ";3,0.8;close;" ..
+        core.formspec_escape(S("Close")) .. "]"
     return fs
 end
 
-function tgw_shop.show(player)
+function tgw_shop.show(player, cat_key)
     if not player or not player:is_player() then return end
-    core.show_formspec(player:get_player_name(), "tgw_shop:main", build_fs(player:get_player_name()))
+    cat_key = cat_key or "weapons"
+    core.show_formspec(player:get_player_name(),
+        "tgw_shop:" .. cat_key,
+        build_fs(player:get_player_name(), cat_key))
 end
 
 core.register_on_player_receive_fields(function(player, formname, fields)
-    if formname ~= "tgw_shop:main" then return end
-    local name = player:get_player_name()
+    local cat_key = formname:match("^tgw_shop:(.+)$")
+    if not cat_key or not tgw_shop.catalogues[cat_key] then return end
+    local name  = player:get_player_name()
+    local items = tgw_shop.catalogues[cat_key]
 
-    for _, it in ipairs(tgw_shop.items) do
+    for _, it in ipairs(items) do
         if fields["buy_" .. it.id] then
             local ok
             if it.wallet == "personal" then
@@ -150,7 +260,6 @@ core.register_on_player_receive_fields(function(player, formname, fields)
             end
             local applied = it.effect(name)
             if not applied then
-                -- remboursement
                 if it.wallet == "personal" then
                     tgw_economy.add_personal(name, it.cost)
                 else
@@ -160,18 +269,121 @@ core.register_on_player_receive_fields(function(player, formname, fields)
                 return true
             end
             core.chat_send_player(name, S("Bought @1 for @2$.", S(it.label), it.cost))
-            tgw_shop.show(player)  -- refresh
+            tgw_shop.show(player, cat_key)  -- refresh
             return true
         end
     end
 end)
 
 -- ---------------------------------------------------------------------------
--- Node comptoir
+-- Pièges (nodes placés au sol par le joueur)
+-- ---------------------------------------------------------------------------
+
+local function damage_invader(obj, dmg)
+    if not obj or not obj.get_luaentity then return end
+    local ent = obj:get_luaentity()
+    if not ent or not ent.name then return end
+    if not ent.name:find("^tgw_invader:") then return end
+    local hp = obj:get_hp() - dmg
+    if hp <= 0 then
+        tgw_core.emit("invader_killed", { invader = ent, killer = nil })
+        obj:remove()
+    else
+        obj:set_hp(hp)
+    end
+end
+
+local function for_invaders_around(pos, radius, fn)
+    for _, obj in ipairs(core.get_objects_inside_radius(pos, radius)) do
+        local ent = obj:get_luaentity()
+        if ent and ent.name and ent.name:find("^tgw_invader:") then
+            fn(obj, ent)
+        end
+    end
+end
+
+core.register_node("tgw_shop:trap_spikes", {
+    description = S("Spike Trap"),
+    tiles = { "tgw_shop_trap_spikes.png" },
+    drawtype  = "nodebox",
+    paramtype = "light",
+    walkable  = true,
+    sunlight_propagates = true,
+    node_box  = { type = "fixed", fixed = { -0.5, -0.5, -0.5, 0.5, -0.25, 0.5 } },
+    selection_box = { type = "fixed", fixed = { -0.5, -0.5, -0.5, 0.5, -0.25, 0.5 } },
+    groups    = { tgw_trap = 1, oddly_breakable_by_hand = 3 },
+    damage_per_second = 2,
+})
+
+core.register_node("tgw_shop:trap_wire", {
+    description = S("Barbed Wire"),
+    tiles = { "tgw_shop_trap_wire.png" },
+    drawtype  = "nodebox",
+    paramtype = "light",
+    walkable  = false,
+    sunlight_propagates = true,
+    node_box  = { type = "fixed", fixed = { -0.5, -0.5, -0.5, 0.5, -0.35, 0.5 } },
+    selection_box = { type = "fixed", fixed = { -0.5, -0.5, -0.5, 0.5, -0.35, 0.5 } },
+    groups    = { tgw_trap = 1, oddly_breakable_by_hand = 3 },
+    damage_per_second = 1,
+})
+
+core.register_node("tgw_shop:trap_mine", {
+    description = S("Land Mine"),
+    tiles = { "tgw_shop_trap_mine.png" },
+    drawtype  = "nodebox",
+    paramtype = "light",
+    walkable  = false,
+    sunlight_propagates = true,
+    node_box  = { type = "fixed", fixed = { -0.3, -0.5, -0.3, 0.3, -0.2, 0.3 } },
+    selection_box = { type = "fixed", fixed = { -0.5, -0.5, -0.5, 0.5, -0.2, 0.5 } },
+    groups    = { tgw_trap = 1, tgw_mine = 1, oddly_breakable_by_hand = 3 },
+})
+
+-- ABM : pièges spikes/wire — damage invaders en contact
+core.register_abm({
+    label = "tgw_shop:trap_damage",
+    nodenames = { "tgw_shop:trap_spikes", "tgw_shop:trap_wire" },
+    interval = 1.0,
+    chance   = 1,
+    action   = function(pos, node)
+        local dmg = (node.name == "tgw_shop:trap_spikes") and 6 or 3
+        for_invaders_around(pos, 1.2, function(obj) damage_invader(obj, dmg) end)
+    end,
+})
+
+-- ABM : mine — explose si invader proche
+core.register_abm({
+    label = "tgw_shop:trap_mine_trigger",
+    nodenames = { "tgw_shop:trap_mine" },
+    interval = 0.5,
+    chance   = 1,
+    action   = function(pos)
+        local triggered = false
+        for_invaders_around(pos, 1.5, function() triggered = true end)
+        if not triggered then return end
+        core.set_node(pos, { name = "air" })
+        core.add_particlespawner({
+            amount = 40, time = 0.2,
+            minpos = vector.subtract(pos, 0.5), maxpos = vector.add(pos, 0.5),
+            minvel = { x = -3, y = 2, z = -3 }, maxvel = { x = 3, y = 6, z = 3 },
+            minexptime = 0.3, maxexptime = 0.8,
+            minsize = 2, maxsize = 4,
+            texture = "default_steel_block.png^[colorize:#ff6622:200",
+            glow = 14,
+        })
+        core.sound_play("tnt_explode",
+            { pos = pos, gain = 1.0, max_hear_distance = 32 }, true)
+        for_invaders_around(pos, 3.5, function(obj) damage_invader(obj, 55) end)
+    end,
+})
+
+-- ---------------------------------------------------------------------------
+-- Nodes comptoirs
 -- ---------------------------------------------------------------------------
 
 core.register_node("tgw_shop:counter", {
-    description = S("Shop Counter"),
+    description = S("Weapons Shop"),
     tiles = {
         "default_steel_block.png",
         "default_steel_block.png",
@@ -184,7 +396,25 @@ core.register_node("tgw_shop:counter", {
     can_dig = function() return false end,
     on_blast = function() end,
     on_rightclick = function(pos, node, clicker)
-        if clicker and clicker:is_player() then tgw_shop.show(clicker) end
+        if clicker and clicker:is_player() then tgw_shop.show(clicker, "weapons") end
+    end,
+})
+
+core.register_node("tgw_shop:counter_materials", {
+    description = S("Materials & Traps Shop"),
+    tiles = {
+        "tgw_shop_counter_mat.png",
+        "tgw_shop_counter_mat.png",
+        "tgw_shop_counter_mat.png",
+    },
+    paramtype = "light",
+    light_source = 6,
+    groups = { tgw_shop = 1, not_in_creative_inventory = 1 },
+    drop = "",
+    can_dig = function() return false end,
+    on_blast = function() end,
+    on_rightclick = function(pos, node, clicker)
+        if clicker and clicker:is_player() then tgw_shop.show(clicker, "materials") end
     end,
 })
 
@@ -199,12 +429,50 @@ function tgw_shop.place_counter(force)
 end
 local place_counter = tgw_shop.place_counter
 
+-- Caisse shop au pied de chaque tour, à côté de l'entrée de spirale
+function tgw_shop.place_tower_counters(force)
+    if storage:get_int("placed_towers") == 1 and not force then return end
+    if not tgw_map then return end
+    local b      = tgw_map.get_wall_bounds()
+    local towers = tgw_map.get_towers()
+    for _, t in pairs(towers) do
+        local at_s         = (t.z_min == b.z_min)
+        local entry_x      = math.floor((t.x_min + t.x_max) / 2)
+        local inner_face_z = at_s and t.z_max or t.z_min
+        local inside_dz    = at_s and -1 or 1
+        -- 2 cases à l'intérieur depuis l'entrée, offset +1 x → libre de la spirale
+        local pos = { x = entry_x + 1, y = b.y_min, z = inner_face_z + 2 * inside_dz }
+        core.set_node(pos, { name = "tgw_shop:counter" })
+    end
+    storage:set_int("placed_towers", 1)
+end
+local place_tower_counters = tgw_shop.place_tower_counters
+
+-- Counter matériaux à l'extérieur de la maison, côté est de la porte
+function tgw_shop.place_materials_counter(force)
+    if storage:get_int("placed_materials") == 1 and not force then return end
+    local hp = tgw_map.get_house_pos()  -- (0, 9, -20)
+    -- Porte au nord à z=-17 → 2 cases nord de la porte, 2 cases à l'est
+    local pos = { x = hp.x + 2, y = hp.y + 1, z = hp.z + 5 }
+    core.set_node(pos, { name = "tgw_shop:counter_materials" })
+    storage:set_int("placed_materials", 1)
+end
+local place_materials_counter = tgw_shop.place_materials_counter
+
 core.register_on_joinplayer(function()
     core.after(2.0, place_counter)
+    core.after(2.3, place_materials_counter)
+    core.after(2.5, place_tower_counters)
 end)
 
 tgw_core.on("world_reset", function()
     storage:set_int("placed", 0)
+    storage:set_int("placed_materials", 0)
+    storage:set_int("placed_towers", 0)
 end)
 
-core.log("action", "[tgw_shop] loaded (" .. #tgw_shop.items .. " items)")
+do
+    local w = #tgw_shop.catalogues.weapons
+    local m = #tgw_shop.catalogues.materials
+    core.log("action", "[tgw_shop] loaded (weapons=" .. w .. ", materials=" .. m .. ")")
+end

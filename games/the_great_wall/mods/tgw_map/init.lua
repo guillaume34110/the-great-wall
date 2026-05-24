@@ -20,9 +20,9 @@ tgw_map.WALL_HEIGHT = 8                       -- y[9..16]
 tgw_map.WALL_TOP_Y  = tgw_map.WALL_BASE_Y + tgw_map.WALL_HEIGHT - 1  -- 16
 tgw_map.CRENEL_Y    = tgw_map.WALL_TOP_Y + 1  -- 17 (alternance pleine/vide)
 
-tgw_map.TOWER_SIZE  = 5                       -- footprint 5×5
-tgw_map.TOWER_HEIGHT = 12                     -- y[9..20]
-tgw_map.TOWER_TOP_Y = tgw_map.WALL_BASE_Y + tgw_map.TOWER_HEIGHT - 1  -- 20
+tgw_map.TOWER_SIZE  = 9                       -- footprint 9×9
+tgw_map.TOWER_HEIGHT = 18                     -- y[9..26], toit solide à y=26
+tgw_map.TOWER_TOP_Y = tgw_map.WALL_BASE_Y + tgw_map.TOWER_HEIGHT - 1  -- 26
 
 -- Maison : derrière le mur, côté sud
 tgw_map.HOUSE_POS   = { x = 0, y = tgw_map.WALL_BASE_Y, z = -20 }
