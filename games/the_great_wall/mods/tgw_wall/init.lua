@@ -27,8 +27,13 @@ core.register_node("tgw_wall:stone", {
     on_blast = function() end,
 })
 
--- Loot crate : casino payant. Cost personnel, spin animé, arme aléatoire.
-local GACHA_COST = 60
+-- Loot crate : Mystery Box style CoD Zombies.
+-- Click → débit, lid s'ouvre, sprite arme tourne au-dessus, ralentit sur le prix,
+-- reste flottant 30s. Punch (ou rightclick) du propriétaire = ramasse.
+-- Sinon disparaît + caisse devient empty (l'argent reste perdu).
+local GACHA_COST     = 60
+local SPIN_DURATION  = 2.5     -- phase d'accélération + plateau (sec)
+local REVEAL_TIME    = 30.0    -- temps de récup après reveal
 local LOOT_POOL = {
     "tgw_combat:ar",
     "tgw_combat:sniper",
@@ -38,40 +43,158 @@ local LOOT_POOL = {
     "tgw_combat:pistol",
 }
 
-local gacha_busy = {}  -- name -> true pendant l'anim (anti spam)
+-- Caisses occupées : key = "x,y,z" → true (anti double-spawn).
+local crate_busy = {}
+local function key(pos) return pos.x .. "," .. pos.y .. "," .. pos.z end
 
-local function gacha_frame(name, pos, prize, i, steps)
-    if not gacha_busy[name] then return end
-    local item = (i < steps) and LOOT_POOL[math.random(1, #LOOT_POOL)] or prize
-    local fs = "formspec_version[6]size[7,7]" ..
-        "bgcolor[#101015FA;true]" ..
-        "label[2.2,0.6;" .. core.formspec_escape(S("LOOT CASINO")) .. "]" ..
-        "box[0.6,1.2;5.8,4;#1c1c24]" ..
-        "item_image[2.5,1.7;2,2;" .. item .. "]"
-    if i < steps then
-        fs = fs .. "label[2.5,4.4;" .. core.formspec_escape(S("Spinning…")) .. "]"
-        core.show_formspec(name, "tgw_wall:gacha", fs)
-        local t       = i / steps
-        local delay   = 0.06 + (t * t) * 0.30  -- easing : accélère en quadratique
-        core.after(delay, gacha_frame, name, pos, prize, i + 1, steps)
-    else
-        local label = core.registered_items[prize]
-            and core.registered_items[prize].description or prize
-        fs = fs .. "label[1.6,4.4;" ..
-            core.formspec_escape(S("You won: @1!", label)) .. "]" ..
-            "button_exit[2.5,5.5;2,0.8;ok;OK]"
-        core.show_formspec(name, "tgw_wall:gacha", fs)
-        local p = core.get_player_by_name(name)
-        if p then p:get_inventory():add_item("main", prize) end
-        if core.get_node(pos).name == "tgw_wall:loot_crate" then
-            core.set_node(pos, { name = "tgw_wall:loot_crate_empty" })
+-- ---------------------------------------------------------------------------
+-- Entité spinner : flotte au-dessus de la caisse ouverte.
+-- ---------------------------------------------------------------------------
+core.register_entity("tgw_wall:gacha_spinner", {
+    initial_properties = {
+        visual            = "wielditem",
+        wield_item        = "default:cobble",
+        visual_size       = { x = 0.5, y = 0.5 },
+        physical          = false,
+        collide_with_objects = false,
+        pointable         = true,
+        static_save       = false,  -- transitoire, ne survit pas au restart
+        glow              = 12,
+    },
+    timer    = 0,
+    swap_t   = 0,
+    swap_int = 0.06,
+    phase    = "spin",   -- "spin" -> "reveal" -> "done"
+    prize    = nil,
+    owner    = nil,
+    crate    = nil,
+    bob_t    = 0,
+
+    on_activate = function(self, staticdata)
+        if not staticdata or staticdata == "" then
+            self.object:remove(); return
         end
-        gacha_busy[name] = nil
-    end
+        local d = core.deserialize(staticdata)
+        if not d then self.object:remove(); return end
+        self.prize = d.prize
+        self.owner = d.owner
+        self.crate = d.crate
+    end,
+
+    on_step = function(self, dtime)
+        self.timer = self.timer + dtime
+        self.bob_t = self.bob_t + dtime
+
+        -- Rotation sur Y permanente.
+        local spin_speed = self.phase == "spin" and 6.0 or 1.0
+        self.object:set_yaw(self.object:get_yaw() + spin_speed * dtime)
+
+        -- Bob vertical (sin) — petit flottement.
+        if self.crate then
+            local base_y = self.crate.y + 1.2
+            local off    = math.sin(self.bob_t * 2.0) * 0.08
+            local p      = self.object:get_pos()
+            self.object:set_pos({ x = p.x, y = base_y + off, z = p.z })
+        end
+
+        if self.phase == "spin" then
+            self.swap_t = self.swap_t + dtime
+            if self.swap_t >= self.swap_int then
+                self.swap_t = 0
+                -- Easing : intervalle qui s'allonge (effet ralentissement roue).
+                local t = math.min(1, self.timer / SPIN_DURATION)
+                self.swap_int = 0.06 + t * t * 0.35
+                local item = LOOT_POOL[math.random(1, #LOOT_POOL)]
+                self.object:set_properties({ wield_item = item })
+                core.sound_play("default_click",
+                    { object = self.object, gain = 0.4, max_hear_distance = 16 }, true)
+            end
+            if self.timer >= SPIN_DURATION then
+                -- Reveal : fige sur le vrai prix.
+                self.phase  = "reveal"
+                self.timer  = 0
+                self.object:set_properties({
+                    wield_item  = self.prize,
+                    visual_size = { x = 0.7, y = 0.7 },
+                })
+                core.sound_play("default_dig_metal",
+                    { pos = self.object:get_pos(), gain = 1.0,
+                      max_hear_distance = 24 }, true)
+                core.add_particlespawner({
+                    amount = 60, time = 0.6,
+                    minpos = vector.subtract(self.object:get_pos(), {x=0.4,y=0.4,z=0.4}),
+                    maxpos = vector.add(self.object:get_pos(),      {x=0.4,y=0.4,z=0.4}),
+                    minvel = { x = -1, y = 1,  z = -1 },
+                    maxvel = { x =  1, y = 3,  z =  1 },
+                    minacc = { x =  0, y = -2, z =  0 },
+                    maxacc = { x =  0, y = -2, z =  0 },
+                    minexptime = 0.6, maxexptime = 1.2,
+                    minsize = 1.2, maxsize = 2.5,
+                    texture = "default_gold_lump.png",
+                    glow = 12,
+                })
+                if self.owner then
+                    local label = core.registered_items[self.prize]
+                        and core.registered_items[self.prize].description
+                        or self.prize
+                    core.chat_send_player(self.owner,
+                        core.colorize("#ffcc44",
+                            "[Casino] " .. S("Punch to take : @1", label)))
+                end
+            end
+        elseif self.phase == "reveal" then
+            if self.timer >= REVEAL_TIME then
+                self.phase = "done"
+                self:_cleanup_crate()
+                self.object:remove()
+            end
+        end
+    end,
+
+    on_punch = function(self, puncher)
+        if self.phase ~= "reveal" then return end
+        if not (puncher and puncher:is_player()) then return end
+        local pname = puncher:get_player_name()
+        if pname ~= self.owner then
+            core.chat_send_player(pname,
+                S("Not your loot — wait the despawn."))
+            return
+        end
+        puncher:get_inventory():add_item("main", self.prize)
+        core.sound_play("default_place_node",
+            { pos = self.object:get_pos(), gain = 0.7 }, true)
+        self.phase = "done"
+        self:_cleanup_crate()
+        self.object:remove()
+    end,
+
+    on_rightclick = function(self, clicker)
+        self.on_punch(self, clicker)
+    end,
+
+    _cleanup_crate = function(self)
+        if not self.crate then return end
+        crate_busy[key(self.crate)] = nil
+        if core.get_node(self.crate).name == "tgw_wall:loot_crate_open" then
+            core.set_node(self.crate, { name = "tgw_wall:loot_crate_empty" })
+        end
+    end,
+})
+
+local function spawn_spinner(crate_pos, prize, owner)
+    local p = { x = crate_pos.x + 0.5, y = crate_pos.y + 1.2, z = crate_pos.z + 0.5 }
+    local obj = core.add_entity(p, "tgw_wall:gacha_spinner",
+        core.serialize({ prize = prize, owner = owner, crate = crate_pos }))
+    return obj
 end
 
+-- ---------------------------------------------------------------------------
+-- Nodes caisse : closed / open / empty
+-- ---------------------------------------------------------------------------
+local CRATE_GROUPS = { tgw_loot = 1, not_in_creative_inventory = 1 }
+
 core.register_node("tgw_wall:loot_crate", {
-    description = S("Loot Casino (@1$)", GACHA_COST),
+    description = S("Mystery Box (@1$)", GACHA_COST),
     tiles = {
         "default_chest_top.png^[colorize:#dd9933:90",
         "default_chest_top.png^[colorize:#dd9933:90",
@@ -80,25 +203,60 @@ core.register_node("tgw_wall:loot_crate", {
         "default_chest_side.png^[colorize:#dd9933:90",
         "default_chest_front.png^[colorize:#dd9933:90",
     },
-    paramtype  = "light",
-    light_source = 6,
-    groups     = { tgw_loot = 1, not_in_creative_inventory = 1 },
-    drop       = "",
-    can_dig    = function() return false end,
-    on_blast   = function() end,
-    on_rightclick = function(pos, node, clicker)
+    paramtype     = "light",
+    light_source  = 8,
+    groups        = CRATE_GROUPS,
+    drop          = "",
+    can_dig       = function() return false end,
+    on_blast      = function() end,
+    on_rightclick = function(pos, _, clicker)
         if not (clicker and clicker:is_player()) then return end
         local name = clicker:get_player_name()
-        if gacha_busy[name] then return end
+        if crate_busy[key(pos)] then
+            core.chat_send_player(name, S("Box busy — wait."))
+            return
+        end
         if not tgw_economy.pay_personal(name, GACHA_COST) then
             core.chat_send_player(name,
                 S("Need @1$ personal to roll.", GACHA_COST))
             return
         end
-        gacha_busy[name] = true
+        crate_busy[key(pos)] = true
+        core.set_node(pos, { name = "tgw_wall:loot_crate_open" })
+        core.sound_play("default_chest_open",
+            { pos = pos, gain = 0.9, max_hear_distance = 16 }, true)
         local prize = LOOT_POOL[math.random(1, #LOOT_POOL)]
-        gacha_frame(name, pos, prize, 1, 16)
+        spawn_spinner(pos, prize, name)
     end,
+    on_punch = function(pos, _, puncher)
+        -- Punch = même action que rightclick (clic gauche déclenche aussi).
+        if puncher and puncher:is_player() then
+            local n = core.get_node(pos)
+            local def = core.registered_nodes[n.name]
+            if def and def.on_rightclick then
+                def.on_rightclick(pos, n, puncher)
+            end
+        end
+    end,
+})
+
+core.register_node("tgw_wall:loot_crate_open", {
+    description = S("Mystery Box (open)"),
+    tiles = {
+        "default_chest_inside.png^[colorize:#dd9933:120",
+        "default_chest_top.png^[colorize:#dd9933:90",
+        "default_chest_side.png^[colorize:#dd9933:90",
+        "default_chest_side.png^[colorize:#dd9933:90",
+        "default_chest_side.png^[colorize:#dd9933:90",
+        "default_chest_front.png^[colorize:#dd9933:120",
+    },
+    paramtype    = "light",
+    light_source = 12,
+    groups       = CRATE_GROUPS,
+    drop         = "",
+    can_dig      = function() return false end,
+    on_blast     = function() end,
+    -- Pas de on_rightclick : caisse occupée par un spinner.
 })
 
 core.register_node("tgw_wall:loot_crate_empty", {
@@ -111,11 +269,11 @@ core.register_node("tgw_wall:loot_crate_empty", {
         "default_chest_side.png^[colorize:#444444:120",
         "default_chest_inside.png^[colorize:#222222:140",
     },
-    paramtype  = "light",
-    groups     = { tgw_loot = 1, not_in_creative_inventory = 1 },
-    drop       = "",
-    can_dig    = function() return false end,
-    on_blast   = function() end,
+    paramtype = "light",
+    groups    = CRATE_GROUPS,
+    drop      = "",
+    can_dig   = function() return false end,
+    on_blast  = function() end,
 })
 
 core.register_node("tgw_wall:tower", {

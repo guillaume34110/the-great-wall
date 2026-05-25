@@ -13,35 +13,66 @@ local FORM          = "tgw_trump_skin:pick"
 -- Roster
 -- ---------------------------------------------------------------------------
 -- Chaque entrée : id, name, blurb, hsl {hue, sat_delta, lum_delta}, swatch (#RRGGBB)
+-- Historiques (incontestables) + Mythologiques / fictionnels iconiques.
+-- texture : PNG 64×32 généré via tools/sprite_gen/generate_guardians.py.
 tgw_trump_skin.GUARDIANS = {
+    -- Historiques
     {
-        id    = "trump",
-        name  = "Donald Trump",
-        blurb = "Mur frontalier US/Mexique. Big, beautiful, expensive.",
-        hsl   = { 30, 40, 5 },
-        swatch = "#ffa040",
+        id      = "trump",
+        name    = "Donald Trump",
+        blurb   = "Mur frontalier US/Mexique. Big, beautiful, expensive.",
+        texture = "tgw_guardian_trump.png",
+        swatch  = "#ffa040",
     },
     {
-        id    = "qin",
-        name  = "Qin Shi Huang",
-        blurb = "Premier Empereur — Grande Muraille de Chine, 220 av. J.-C.",
-        blurb_short = "Grande Muraille de Chine",
-        hsl   = { 0, 50, -15 },
-        swatch = "#992222",
+        id      = "qin",
+        name    = "Qin Shi Huang",
+        blurb   = "Premier Empereur — Grande Muraille de Chine, 220 av. J.-C.",
+        texture = "tgw_guardian_qin.png",
+        swatch  = "#992222",
     },
     {
-        id    = "hadrian",
-        name  = "Hadrien",
-        blurb = "Empereur romain — Mur d'Hadrien, frontière nord de Britannia.",
-        hsl   = { 40, 20, -10 },
-        swatch = "#b08850",
+        id      = "hadrian",
+        name    = "Hadrien",
+        blurb   = "Empereur romain — Mur d'Hadrien, frontière nord de Britannia.",
+        texture = "tgw_guardian_hadrian.png",
+        swatch  = "#b08850",
     },
     {
-        id    = "vauban",
-        name  = "Vauban",
-        blurb = "Maréchal de France — 160 places fortes, art de la fortification.",
-        hsl   = { 210, 40, -10 },
-        swatch = "#3a5fa8",
+        id      = "vauban",
+        name    = "Vauban",
+        blurb   = "Maréchal de France — 160 places fortes, art de la fortification.",
+        texture = "tgw_guardian_vauban.png",
+        swatch  = "#3a5fa8",
+    },
+    -- Mythologiques / fictionnels
+    {
+        id      = "jon_snow",
+        name    = "Jon Snow",
+        blurb   = "Lord Commandant de la Garde de Nuit. Le Mur de glace, 700 pieds de haut.",
+        texture = "tgw_guardian_jon_snow.png",
+        swatch  = "#2a2a30",
+    },
+    {
+        id      = "heimdall",
+        name    = "Heimdall",
+        blurb   = "Gardien du Bifrost. Voit à 100 lieues, entend l'herbe pousser.",
+        texture = "tgw_guardian_heimdall.png",
+        swatch  = "#d4a82c",
+    },
+    {
+        id      = "gandalf",
+        name    = "Gandalf",
+        blurb   = "Pont de la Khazad-dûm. « You shall not pass ! »",
+        texture = "tgw_guardian_gandalf.png",
+        swatch  = "#c8c8d0",
+    },
+    {
+        id      = "janus",
+        name    = "Janus",
+        blurb   = "Dieu romain des portes et seuils. Deux visages, un dedans, un dehors.",
+        texture = "tgw_guardian_janus.png",
+        swatch  = "#6a3a8a",
     },
 }
 
@@ -56,8 +87,7 @@ end
 -- Apply
 -- ---------------------------------------------------------------------------
 local function texture_for(g)
-    local h, s, l = g.hsl[1] or 0, g.hsl[2] or 0, g.hsl[3] or 0
-    return string.format("character.png^[hsl:%d:%d:%d", h, s, l)
+    return g.texture or "character.png"
 end
 
 function tgw_trump_skin.apply(player, guardian_id)
@@ -80,11 +110,14 @@ end
 -- Formspec
 -- ---------------------------------------------------------------------------
 local function build_fs()
-    local n = #tgw_trump_skin.GUARDIANS
-    local col_w  = 3.4
-    local pad    = 0.3
-    local width  = pad + n * col_w + pad
-    local height = 6.2
+    local cols   = 4
+    local col_w  = 2.8
+    local row_h  = 4.4
+    local pad    = 0.4
+    local n      = #tgw_trump_skin.GUARDIANS
+    local rows   = math.ceil(n / cols)
+    local width  = pad + cols * col_w + pad
+    local height = 1.0 + rows * row_h + 0.4
 
     local fs = "formspec_version[6]size[" .. width .. "," .. height .. "]" ..
         "bgcolor[#101015FA;true]" ..
@@ -92,17 +125,26 @@ local function build_fs()
             core.formspec_escape(S("Choose your Wall Guardian")) .. "]"
 
     for i, g in ipairs(tgw_trump_skin.GUARDIANS) do
-        local x = pad + (i - 1) * col_w
-        -- carte
+        local col = (i - 1) % cols
+        local row = math.floor((i - 1) / cols)
+        local x   = pad + col * col_w
+        local y   = 1.0 + row * row_h
+        local cw  = col_w - 0.2
+        local ch  = row_h - 0.2
+        -- Face avant du skin (8x8 à offset 8,8 du PNG 64x32) agrandie 2.4×2.4.
+        local face = "[combine:8x8:-8,-8=" .. g.texture
         fs = fs ..
-            "box[" .. x .. ",1.0;" .. (col_w - 0.2) .. ",4.6;#1c1c24]" ..
-            -- swatch (gros bloc couleur "portrait")
-            "box[" .. (x + 0.4) .. ",1.2;" .. (col_w - 1.0) .. ",1.8;" .. g.swatch .. "]" ..
-            "label[" .. (x + 0.4) .. ",3.2;" .. core.formspec_escape(g.name) .. "]" ..
-            "textarea[" .. (x + 0.3) .. ",3.5;" .. (col_w - 0.6) ..
-                ",1.4;;;" .. core.formspec_escape(g.blurb) .. "]" ..
-            "button[" .. (x + 0.3) .. ",5.0;" .. (col_w - 0.6) ..
-                ",0.8;pick_" .. g.id .. ";" ..
+            "box[" .. x .. "," .. y .. ";" .. cw .. "," .. ch .. ";#1c1c24]" ..
+            "box[" .. (x + 0.1) .. "," .. (y + 0.1) .. ";" ..
+                (cw - 0.2) .. ",1.0;" .. g.swatch .. "]" ..
+            "image[" .. (x + cw/2 - 1.2) .. "," .. (y + 0.15) .. ";" ..
+                "2.4,2.4;" .. face .. "]" ..
+            "label[" .. (x + 0.2) .. "," .. (y + 2.8) .. ";" ..
+                core.formspec_escape(g.name) .. "]" ..
+            "tooltip[" .. x .. "," .. y .. ";" .. cw .. "," .. ch ..
+                ";" .. core.formspec_escape(g.blurb) .. "]" ..
+            "button_exit[" .. (x + 0.15) .. "," .. (y + ch - 0.9) ..
+                ";" .. (cw - 0.3) .. ",0.75;pick_" .. g.id .. ";" ..
                 core.formspec_escape(S("Defend!")) .. "]"
     end
     return fs
@@ -115,21 +157,25 @@ end
 
 core.register_on_player_receive_fields(function(player, formname, fields)
     if formname ~= FORM then return end
+    local pname = player:get_player_name()
     for _, g in ipairs(tgw_trump_skin.GUARDIANS) do
         if fields["pick_" .. g.id] then
             player:get_meta():set_string(META_GUARDIAN, g.id)
             tgw_trump_skin.apply(player, g.id)
-            core.chat_send_player(player:get_player_name(),
+            core.close_formspec(pname, FORM)
+            core.chat_send_player(pname,
                 core.colorize("#ffcc44",
                     "[Wall] " .. S("You stand as @1.", g.name)))
             return true
         end
     end
-    -- Joueur tente de fermer sans choisir → ré-affiche.
+    -- Fermeture sans choix : ré-affiche.
     if fields.quit and player:get_meta():get_string(META_GUARDIAN) == "" then
-        core.after(0.3, function()
-            local p = core.get_player_by_name(player:get_player_name())
-            if p then tgw_trump_skin.show(p) end
+        core.after(0.5, function()
+            local p = core.get_player_by_name(pname)
+            if p and p:get_meta():get_string(META_GUARDIAN) == "" then
+                tgw_trump_skin.show(p)
+            end
         end)
         return true
     end

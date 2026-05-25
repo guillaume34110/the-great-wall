@@ -379,24 +379,240 @@ core.register_abm({
 })
 
 -- ---------------------------------------------------------------------------
+-- Mystery Box (style CoD Zombies) — caisse arme weapons
+-- Click → débit, lid s'ouvre, sprite arme tourne au-dessus, ralentit sur le prix,
+-- reste flottant 30s. Punch (ou rightclick) du propriétaire = ramasse.
+-- Après cleanup, caisse repasse à closed (réutilisable, contrairement à tgw_wall).
+-- ---------------------------------------------------------------------------
+local GACHA_COST    = 50
+local SPIN_DURATION = 2.5
+local REVEAL_TIME   = 30.0
+local WEAPON_POOL = {}
+for _, it in ipairs(tgw_shop.catalogues.weapons) do
+    table.insert(WEAPON_POOL, it.icon_item)
+end
+-- Bonus : accessoires (15% effectif via duplication ratio).
+-- Pool unique = armes + accessoires. Accessoires plus rares (1 entry chacun).
+if tgw_combat and tgw_combat.accessories then
+    for id, _ in pairs(tgw_combat.accessories) do
+        table.insert(WEAPON_POOL, "tgw_combat:acc_" .. id)
+    end
+end
+
+local crate_busy = {}
+local function ckey(pos) return pos.x .. "," .. pos.y .. "," .. pos.z end
+
+core.register_entity("tgw_shop:gacha_spinner", {
+    initial_properties = {
+        visual               = "wielditem",
+        wield_item           = "default:cobble",
+        visual_size          = { x = 0.5, y = 0.5 },
+        physical             = false,
+        collide_with_objects = false,
+        pointable            = true,
+        static_save          = false,
+        glow                 = 12,
+    },
+    timer    = 0,
+    swap_t   = 0,
+    swap_int = 0.06,
+    phase    = "spin",
+    prize    = nil,
+    owner    = nil,
+    crate    = nil,
+    bob_t    = 0,
+
+    on_activate = function(self, staticdata)
+        if not staticdata or staticdata == "" then
+            self.object:remove(); return
+        end
+        local d = core.deserialize(staticdata)
+        if not d then self.object:remove(); return end
+        self.prize = d.prize
+        self.owner = d.owner
+        self.crate = d.crate
+    end,
+
+    on_step = function(self, dtime)
+        self.timer = self.timer + dtime
+        self.bob_t = self.bob_t + dtime
+
+        local spin_speed = self.phase == "spin" and 6.0 or 1.0
+        self.object:set_yaw(self.object:get_yaw() + spin_speed * dtime)
+
+        if self.crate then
+            local base_y = self.crate.y + 1.2
+            local off    = math.sin(self.bob_t * 2.0) * 0.08
+            local p      = self.object:get_pos()
+            self.object:set_pos({ x = p.x, y = base_y + off, z = p.z })
+        end
+
+        if self.phase == "spin" then
+            self.swap_t = self.swap_t + dtime
+            if self.swap_t >= self.swap_int then
+                self.swap_t = 0
+                local t = math.min(1, self.timer / SPIN_DURATION)
+                self.swap_int = 0.06 + t * t * 0.35
+                local item = WEAPON_POOL[math.random(1, #WEAPON_POOL)]
+                self.object:set_properties({ wield_item = item })
+                core.sound_play("default_click",
+                    { object = self.object, gain = 0.4, max_hear_distance = 16 }, true)
+            end
+            if self.timer >= SPIN_DURATION then
+                self.phase = "reveal"
+                self.timer = 0
+                self.object:set_properties({
+                    wield_item  = self.prize,
+                    visual_size = { x = 0.7, y = 0.7 },
+                })
+                core.sound_play("default_dig_metal",
+                    { pos = self.object:get_pos(), gain = 1.0,
+                      max_hear_distance = 24 }, true)
+                core.add_particlespawner({
+                    amount = 60, time = 0.6,
+                    minpos = vector.subtract(self.object:get_pos(), {x=0.4,y=0.4,z=0.4}),
+                    maxpos = vector.add(self.object:get_pos(),      {x=0.4,y=0.4,z=0.4}),
+                    minvel = { x = -1, y = 1,  z = -1 },
+                    maxvel = { x =  1, y = 3,  z =  1 },
+                    minacc = { x =  0, y = -2, z =  0 },
+                    maxacc = { x =  0, y = -2, z =  0 },
+                    minexptime = 0.6, maxexptime = 1.2,
+                    minsize = 1.2, maxsize = 2.5,
+                    texture = "default_gold_lump.png",
+                    glow = 12,
+                })
+                if self.owner then
+                    local label = core.registered_items[self.prize]
+                        and core.registered_items[self.prize].description
+                        or self.prize
+                    core.chat_send_player(self.owner,
+                        core.colorize("#66ccff",
+                            "[Arsenal] " .. S("Punch to take : @1", label)))
+                end
+            end
+        elseif self.phase == "reveal" then
+            if self.timer >= REVEAL_TIME then
+                self.phase = "done"
+                self:_cleanup_crate()
+                self.object:remove()
+            end
+        end
+    end,
+
+    on_punch = function(self, puncher)
+        if self.phase ~= "reveal" then return end
+        if not (puncher and puncher:is_player()) then return end
+        local pname = puncher:get_player_name()
+        if pname ~= self.owner then
+            core.chat_send_player(pname,
+                S("Not your loot — wait the despawn."))
+            return
+        end
+        puncher:get_inventory():add_item("main", self.prize)
+        core.sound_play("default_place_node",
+            { pos = self.object:get_pos(), gain = 0.7 }, true)
+        self.phase = "done"
+        self:_cleanup_crate()
+        self.object:remove()
+    end,
+
+    on_rightclick = function(self, clicker)
+        self.on_punch(self, clicker)
+    end,
+
+    _cleanup_crate = function(self)
+        if not self.crate then return end
+        crate_busy[ckey(self.crate)] = nil
+        -- Réutilisable : repasse à closed (au lieu de empty comme tgw_wall).
+        if core.get_node(self.crate).name == "tgw_shop:counter_open" then
+            core.set_node(self.crate, { name = "tgw_shop:counter" })
+        end
+    end,
+})
+
+local function spawn_weapon_spinner(crate_pos, prize, owner)
+    local p = { x = crate_pos.x + 0.5, y = crate_pos.y + 1.2, z = crate_pos.z + 0.5 }
+    return core.add_entity(p, "tgw_shop:gacha_spinner",
+        core.serialize({ prize = prize, owner = owner, crate = crate_pos }))
+end
+
+-- ---------------------------------------------------------------------------
 -- Nodes comptoirs
 -- ---------------------------------------------------------------------------
 
 core.register_node("tgw_shop:counter", {
-    description = S("Weapons Shop"),
+    description = S("Weapons Mystery Box (@1$)", GACHA_COST),
     tiles = {
-        "default_steel_block.png",
-        "default_steel_block.png",
-        "default_steel_block.png^[colorize:#3366cc:120",
+        "default_chest_top.png^[colorize:#3366cc:120",
+        "default_chest_top.png^[colorize:#3366cc:120",
+        "default_chest_side.png^[colorize:#3366cc:120",
+        "default_chest_side.png^[colorize:#3366cc:120",
+        "default_chest_side.png^[colorize:#3366cc:120",
+        "default_chest_front.png^[colorize:#3366cc:120",
     },
-    paramtype = "light",
-    light_source = 6,
-    groups = { tgw_shop = 1, not_in_creative_inventory = 1 },
-    drop = "",
-    can_dig = function() return false end,
-    on_blast = function() end,
-    on_rightclick = function(pos, node, clicker)
-        if clicker and clicker:is_player() then tgw_shop.show(clicker, "weapons") end
+    paramtype     = "light",
+    light_source  = 8,
+    groups        = { tgw_shop = 1, not_in_creative_inventory = 1 },
+    drop          = "",
+    can_dig       = function() return false end,
+    on_blast      = function() end,
+    on_rightclick = function(pos, _, clicker)
+        if not (clicker and clicker:is_player()) then return end
+        local name = clicker:get_player_name()
+        if crate_busy[ckey(pos)] then
+            core.chat_send_player(name, S("Box busy — wait."))
+            return
+        end
+        if not tgw_economy.pay_personal(name, GACHA_COST) then
+            core.chat_send_player(name,
+                S("Need @1$ personal to roll.", GACHA_COST))
+            return
+        end
+        crate_busy[ckey(pos)] = true
+        core.set_node(pos, { name = "tgw_shop:counter_open" })
+        core.sound_play("default_chest_open",
+            { pos = pos, gain = 0.9, max_hear_distance = 16 }, true)
+        local prize = WEAPON_POOL[math.random(1, #WEAPON_POOL)]
+        spawn_weapon_spinner(pos, prize, name)
+    end,
+    on_punch = function(pos, _, puncher)
+        if puncher and puncher:is_player() then
+            local n = core.get_node(pos)
+            local def = core.registered_nodes[n.name]
+            if def and def.on_rightclick then
+                def.on_rightclick(pos, n, puncher)
+            end
+        end
+    end,
+})
+
+core.register_node("tgw_shop:counter_open", {
+    description = S("Weapons Mystery Box (open)"),
+    tiles = {
+        "default_chest_inside.png^[colorize:#3366cc:140",
+        "default_chest_top.png^[colorize:#3366cc:120",
+        "default_chest_side.png^[colorize:#3366cc:120",
+        "default_chest_side.png^[colorize:#3366cc:120",
+        "default_chest_side.png^[colorize:#3366cc:120",
+        "default_chest_front.png^[colorize:#3366cc:140",
+    },
+    paramtype    = "light",
+    light_source = 12,
+    groups       = { tgw_shop = 1, not_in_creative_inventory = 1 },
+    drop         = "",
+    can_dig      = function() return false end,
+    on_blast     = function() end,
+})
+
+-- Recovery : si une caisse est restée ouverte (crash mid-spin, entité perdue),
+-- la repasse à closed quand le chunk se recharge.
+core.register_lbm({
+    label = "tgw_shop:reset_stuck_open",
+    name  = "tgw_shop:reset_stuck_open",
+    nodenames = { "tgw_shop:counter_open" },
+    run_at_every_load = true,
+    action = function(pos)
+        core.set_node(pos, { name = "tgw_shop:counter" })
     end,
 })
 

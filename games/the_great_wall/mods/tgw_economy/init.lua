@@ -9,12 +9,21 @@ local cfg     = tgw_core.config
 local storage = core.get_mod_storage()
 local KEY_SHARED = "shared"
 local KEY_PERS   = "tgw_pers_$"  -- préfixe meta joueur
+local ADMIN_INF  = 999999        -- crédits affichés pour admin (server priv)
+
+local function is_admin(name)
+    return name and core.check_player_privs(name, { server = true })
+end
 
 -- ---------------------------------------------------------------------------
 -- Wallets
 -- ---------------------------------------------------------------------------
 
 function tgw_economy.get_shared()
+    -- Si un admin est connecté, le wallet commun est infini aussi.
+    for _, p in ipairs(core.get_connected_players()) do
+        if is_admin(p:get_player_name()) then return ADMIN_INF end
+    end
     return storage:get_int(KEY_SHARED)
 end
 
@@ -27,6 +36,10 @@ function tgw_economy.add_shared(amount)
 end
 
 function tgw_economy.pay_shared(amount)
+    -- Admin connecté → gratuit, pas de débit.
+    for _, p in ipairs(core.get_connected_players()) do
+        if is_admin(p:get_player_name()) then return true end
+    end
     local v = storage:get_int(KEY_SHARED)
     if v < amount then return false end
     storage:set_int(KEY_SHARED, v - amount)
@@ -35,12 +48,14 @@ function tgw_economy.pay_shared(amount)
 end
 
 function tgw_economy.get_personal(player_name)
+    if is_admin(player_name) then return ADMIN_INF end
     local p = core.get_player_by_name(player_name)
     if not p then return 0 end
     return p:get_meta():get_int(KEY_PERS)
 end
 
 function tgw_economy.add_personal(player_name, amount)
+    if is_admin(player_name) then return ADMIN_INF end
     local p = core.get_player_by_name(player_name)
     if not p then return 0 end
     local meta = p:get_meta()
@@ -52,6 +67,7 @@ function tgw_economy.add_personal(player_name, amount)
 end
 
 function tgw_economy.pay_personal(player_name, amount)
+    if is_admin(player_name) then return true end
     local p = core.get_player_by_name(player_name)
     if not p then return false end
     local meta = p:get_meta()
