@@ -53,7 +53,10 @@ core.after(3.0, function()
     -- ---------------------------------------------------------------------
     -- Bloc 8 : weapons + accessories registry
     -- ---------------------------------------------------------------------
-    local expected_weapons = { "bat", "pistol", "shotgun", "ar", "sniper", "minigun" }
+    local expected_weapons = {
+        "bat", "pistol", "shotgun", "ar", "sniper", "minigun",
+        "knife", "sledge", "chainsaw", "smg", "revolver", "lmg",
+    }
     for _, w in ipairs(expected_weapons) do
         check("weapon:" .. w, tgw_combat.weapons[w] ~= nil)
         check("weapon_item:" .. w,
@@ -66,10 +69,35 @@ core.after(3.0, function()
     check("sniper.mag_size=5",   tgw_combat.weapons.sniper.mag_size  == 5)
     check("minigun.mag_size=100",tgw_combat.weapons.minigun.mag_size == 100)
     check("bat.no_mag_size",     tgw_combat.weapons.bat.mag_size     == nil)
+    check("smg.mag_size=35",     tgw_combat.weapons.smg.mag_size     == 35)
+    check("revolver.mag_size=6", tgw_combat.weapons.revolver.mag_size == 6)
+    check("lmg.mag_size=80",     tgw_combat.weapons.lmg.mag_size     == 80)
+
+    -- Auto-fire flag : armes pleinement automatiques
+    check("ar.auto",       tgw_combat.weapons.ar.auto       == true)
+    check("smg.auto",      tgw_combat.weapons.smg.auto      == true)
+    check("lmg.auto",      tgw_combat.weapons.lmg.auto      == true)
+    check("minigun.auto",  tgw_combat.weapons.minigun.auto  == true)
+    check("pistol.semi",   not tgw_combat.weapons.pistol.auto)
+    check("revolver.semi", not tgw_combat.weapons.revolver.auto)
+    check("sniper.semi",   not tgw_combat.weapons.sniper.auto)
+
+    -- Mêlée : _on_use présent (utilisé par globalstep auto-swing)
+    check("bat._on_use",      type(tgw_combat.weapons.bat._on_use)      == "function")
+    check("knife._on_use",    type(tgw_combat.weapons.knife._on_use)    == "function")
+    check("sledge._on_use",   type(tgw_combat.weapons.sledge._on_use)   == "function")
+    check("chainsaw._on_use", type(tgw_combat.weapons.chainsaw._on_use) == "function")
+    -- Mêlée : tool damage_groups VIDE (engine n'inflige rien, on_use gère)
+    local bat_def = core.registered_items["tgw_combat:bat"]
+    local bat_dmg = bat_def and bat_def.tool_capabilities
+        and bat_def.tool_capabilities.damage_groups or {}
+    check("bat.engine_dmg=0", next(bat_dmg) == nil)
 
     local expected_accs = {
         "ext_barrel", "supp", "ext_mag", "drum",
         "red_dot", "scope", "foregrip", "tac_grip",
+        "long_barrel", "compensator", "speed_loader",
+        "holo", "laser", "angled_grip", "stock",
     }
     for _, a in ipairs(expected_accs) do
         check("accessory:" .. a, tgw_combat.accessories[a] ~= nil)

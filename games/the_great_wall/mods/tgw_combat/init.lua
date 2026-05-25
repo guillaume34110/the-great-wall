@@ -168,13 +168,15 @@ local function refresh_stack(itemstack, def)
             string.format("%.2fs", s.cooldown)) ..
         ammo_line .. acc_line
     meta:set_string("description", desc)
-    -- Melee : tool_capabilities mutables via meta (override l'enregistrement).
+    -- Melee : tool_capabilities mutables via meta. damage_groups vide car
+    -- on_use_melee gère le dégât (sinon double-hit avec engine auto-punch).
+    -- full_punch_interval garde la cadence visible côté client.
     if def.type == "melee" then
         meta:set_tool_capabilities({
             full_punch_interval = s.cooldown,
             max_drop_level      = 1,
             groupcaps           = {},
-            damage_groups       = { fleshy = s.damage },
+            damage_groups       = {},
         })
     end
     return lvl, s
@@ -352,6 +354,45 @@ local function on_use_hitscan(weapon)
     end
 end
 
+-- Mêlée : raycast court + punch direct. Engine ne fait plus de dégât (tool
+-- damage_groups vide), tout passe par on_use → cohérence avec auto-swing.
+local function on_use_melee(weapon)
+    return function(itemstack, user)
+        if not user or not user:is_player() then return itemstack end
+        local s = effective(weapon, itemstack)
+        if not check_cooldown(itemstack, s.cooldown) then return itemstack end
+        local start = eye_pos(user)
+        local dir   = user:get_look_dir()
+        local reach = weapon.range or 4
+        local ende  = vector.add(start, vector.multiply(dir, reach))
+        local ray   = core.raycast(start, ende, true, false)
+        local hit_any = false
+        for pt in ray do
+            if pt.type == "object" then
+                local obj = pt.ref
+                if obj and obj ~= user then
+                    obj:punch(user, 1.0, {
+                        full_punch_interval = s.cooldown,
+                        damage_groups       = { fleshy = s.damage },
+                    }, dir)
+                    hit_any = true
+                    break
+                end
+            elseif pt.type == "node" then
+                break
+            end
+        end
+        if hit_any then
+            core.sound_play("default_dig_choppy",
+                { object = user, gain = 0.4, max_hear_distance = 16 }, true)
+        else
+            core.sound_play("default_tool_breaks",
+                { object = user, gain = 0.2, max_hear_distance = 12 }, true)
+        end
+        return itemstack
+    end
+end
+
 local function on_use_shotgun(weapon)
     return function(itemstack, user)
         if not user or not user:is_player() then return itemstack end
@@ -394,9 +435,11 @@ function tgw_combat.register_weapon(def)
             full_punch_interval = def.cooldown or 0.6,
             max_drop_level      = 1,
             groupcaps           = {},
-            damage_groups       = { fleshy = def.damage },
+            damage_groups       = {},   -- damage géré dans on_use (autorise auto-swing)
         }
         tool.range = def.range or 4
+        def._on_use = on_use_melee(def)
+        tool.on_use = def._on_use
     else
         -- ranged : pas de punch (range=0), tout passe par on_use
         tool.range = 0
@@ -407,16 +450,36 @@ function tgw_combat.register_weapon(def)
             damage_groups       = {},
         }
         if def.type == "hitscan" then
-            tool.on_use = on_use_hitscan(def)
+            def._on_use = on_use_hitscan(def)
         elseif def.type == "shotgun" then
-            tool.on_use = on_use_shotgun(def)
+            def._on_use = on_use_shotgun(def)
         else
             error("tgw_combat: type inconnu " .. tostring(def.type))
         end
+        tool.on_use = def._on_use
     end
 
     core.register_tool(item_name, tool)
 end
+
+-- ---------------------------------------------------------------------------
+-- Auto-fire globalstep : melee swing + ranged "auto" tant que LMB tenue.
+-- check_cooldown sur le stack rate-limite déjà ; on appelle juste le _on_use.
+-- ---------------------------------------------------------------------------
+core.register_globalstep(function(_)
+    for _, p in ipairs(core.get_connected_players()) do
+        local ctl = p:get_player_control()
+        if ctl.dig then
+            local stack = p:get_wielded_item()
+            local wid   = stack:get_name():match("^tgw_combat:(.+)$")
+            local def   = wid and tgw_combat.weapons[wid]
+            if def and def._on_use and (def.type == "melee" or def.auto) then
+                local new = def._on_use(stack, p) or stack
+                p:set_wielded_item(new)
+            end
+        end
+    end
+end)
 
 -- ---------------------------------------------------------------------------
 -- Pilot weapons
@@ -469,6 +532,7 @@ tgw_combat.register_weapon({
     cooldown        = 0.25,
     range           = 40,
     mag_size        = 30,
+    auto            = true,
     inventory_image = "tgw_combat_ar.png",
 })
 
@@ -493,7 +557,89 @@ tgw_combat.register_weapon({
     cooldown        = 0.10,
     range           = 35,
     mag_size        = 100,
+    auto            = true,
     inventory_image = "tgw_combat_minigun.png",
+})
+
+-- ---------------------------------------------------------------------------
+-- Armes additionnelles (variété + auto-fire)
+-- ---------------------------------------------------------------------------
+
+-- Mêlée légère, swing rapide (auto via globalstep, comme tout melee)
+tgw_combat.register_weapon({
+    id       = "knife",
+    label    = "Combat Knife",
+    tier     = 1,
+    type     = "melee",
+    damage   = 8,
+    cooldown = 0.30,
+    range    = 3,
+    color    = "#cccccc",
+})
+
+-- Mêlée lourde, gros dégâts, lente
+tgw_combat.register_weapon({
+    id       = "sledge",
+    label    = "Sledgehammer",
+    tier     = 2,
+    type     = "melee",
+    damage   = 35,
+    cooldown = 1.10,
+    range    = 4,
+    color    = "#777733",
+})
+
+-- Mêlée auto continue, dégâts modérés, cadence brutale
+tgw_combat.register_weapon({
+    id       = "chainsaw",
+    label    = "Chainsaw",
+    tier     = 3,
+    type     = "melee",
+    damage   = 10,
+    cooldown = 0.18,
+    range    = 3,
+    color    = "#cc4422",
+})
+
+-- SMG : auto rapide, dégâts faibles, gros mag, courte portée
+tgw_combat.register_weapon({
+    id       = "smg",
+    label    = "Compact SMG",
+    tier     = 2,
+    type     = "hitscan",
+    damage   = 7,
+    cooldown = 0.12,
+    range    = 25,
+    mag_size = 35,
+    auto     = true,
+    color    = "#888899",
+})
+
+-- Revolver : single-action, gros dmg, mag minuscule
+tgw_combat.register_weapon({
+    id       = "revolver",
+    label    = "Liberty Revolver",
+    tier     = 3,
+    type     = "hitscan",
+    damage   = 45,
+    cooldown = 0.80,
+    range    = 40,
+    mag_size = 6,
+    color    = "#aa8844",
+})
+
+-- LMG : auto haut tier, très gros mag, reload long
+tgw_combat.register_weapon({
+    id       = "lmg",
+    label    = "Heavy LMG",
+    tier     = 4,
+    type     = "hitscan",
+    damage   = 16,
+    cooldown = 0.14,
+    range    = 45,
+    mag_size = 80,
+    auto     = true,
+    color    = "#446644",
 })
 
 -- ---------------------------------------------------------------------------
@@ -646,6 +792,43 @@ tgw_combat.register_accessory({
     id = "tac_grip", slot = "grip", label = "Tactical Grip",
     blurb = "-30% reload time, -10% cooldown", tier = 3, color = "#dd44aa",
     effects = { reload_mul = 0.70, cooldown_mul = 0.90 },
+})
+
+-- Additions : variété par slot
+tgw_combat.register_accessory({
+    id = "long_barrel", slot = "barrel", label = "Long Barrel",
+    blurb = "+60% range, -5% damage", tier = 3, color = "#3344aa",
+    effects = { range_mul = 1.60, damage_mul = 0.95 },
+})
+tgw_combat.register_accessory({
+    id = "compensator", slot = "barrel", label = "Compensator",
+    blurb = "-50% spread, -10% cooldown", tier = 3, color = "#999999",
+    effects = { spread_mul = 0.50, cooldown_mul = 0.90 },
+})
+tgw_combat.register_accessory({
+    id = "speed_loader", slot = "mag", label = "Speed Loader",
+    blurb = "-50% reload, -20% mag", tier = 2, color = "#22aaaa",
+    effects = { reload_mul = 0.50, mag_mul = 0.80 },
+})
+tgw_combat.register_accessory({
+    id = "holo", slot = "sight", label = "Holographic Sight",
+    blurb = "-25% spread, +15% range", tier = 2, color = "#33cc88",
+    effects = { spread_mul = 0.75, range_mul = 1.15 },
+})
+tgw_combat.register_accessory({
+    id = "laser", slot = "sight", label = "Laser Sight",
+    blurb = "-35% spread, +10% damage", tier = 3, color = "#ff2266",
+    effects = { spread_mul = 0.65, damage_mul = 1.10 },
+})
+tgw_combat.register_accessory({
+    id = "angled_grip", slot = "grip", label = "Angled Grip",
+    blurb = "-15% cooldown, +5% damage", tier = 2, color = "#996633",
+    effects = { cooldown_mul = 0.85, damage_mul = 1.05 },
+})
+tgw_combat.register_accessory({
+    id = "stock", slot = "grip", label = "Heavy Stock",
+    blurb = "-30% spread, -10% reload", tier = 3, color = "#665544",
+    effects = { spread_mul = 0.70, reload_mul = 0.90 },
 })
 
 -- ---------------------------------------------------------------------------
@@ -820,37 +1003,36 @@ core.register_on_player_receive_fields(function(player, formname, fields)
     return true
 end)
 
--- Trigger : sneak + right-click ouvre le loadout.
--- on_secondary_use est invoqué sur shift+right-click ; on_place sinon.
--- Pour fiabilité on attache aux deux + chatcommand /loadout.
-do
-    local function attach_loadout_triggers()
-        for id, _ in pairs(tgw_combat.weapons) do
-            local item_name = "tgw_combat:" .. id
-            local def = core.registered_items[item_name]
-            if def then
-                local orig_place = def.on_place
-                core.override_item(item_name, {
-                    on_secondary_use = function(_, user)
-                        if user and user:is_player() then
-                            tgw_combat.show_loadout(user)
-                        end
-                    end,
-                    on_place = function(itemstack, user, pointed)
-                        if user and user:is_player() then
-                            tgw_combat.show_loadout(user)
-                            return itemstack
-                        end
-                        if orig_place then
-                            return orig_place(itemstack, user, pointed)
-                        end
-                    end,
-                })
-            end
+-- Workbench : node placé dans la maison, right-click = ouvre loadout.
+-- Right-click sur arme = libre (ouverture porte/etc.), plus de hijack.
+core.register_node("tgw_combat:workbench", {
+    description = S("Weapon Workbench"),
+    tiles = {
+        "default_steel_block.png^[colorize:#222222:150",
+        "default_steel_block.png^[colorize:#222222:150",
+        "default_steel_block.png^[colorize:#aa6622:120",
+        "default_steel_block.png^[colorize:#aa6622:120",
+        "default_steel_block.png^[colorize:#aa6622:120",
+        "default_steel_block.png^[colorize:#aa6622:120",
+    },
+    paramtype  = "light",
+    light_source = 4,
+    groups = { tgw_house = 1, not_in_creative_inventory = 1 },
+    drop = "",
+    sounds = default.node_sound_metal_defaults(),
+    can_dig = function() return false end,
+    on_blast = function() end,
+    on_rightclick = function(_, _, clicker)
+        if clicker and clicker:is_player() then
+            tgw_combat.show_loadout(clicker)
         end
-    end
-    core.after(0, attach_loadout_triggers)
-end
+    end,
+    on_punch = function(_, _, puncher)
+        if puncher and puncher:is_player() then
+            tgw_combat.show_loadout(puncher)
+        end
+    end,
+})
 
 core.register_chatcommand("loadout", {
     description = "Open weapon loadout (equip accessories)",

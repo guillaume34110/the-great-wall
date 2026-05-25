@@ -604,9 +604,108 @@ function tgw_wall.build(force)
         end
     end
 
+    -- ---------- 8b. Torches sur la couronne du mur (chemin de ronde) ----------
+    -- Posées au sol (y = b.y_max+1 = 17) sur la 2e cellule depuis l'extérieur,
+    -- pour ne pas occuper la place des crénelles (cellule extérieure, y=17).
+    -- param2 floor torch = 1.
+    local torch_floor = "default:torch"
+    if core.registered_nodes[torch_floor] then
+        local ty   = b.y_max + 1
+        local step = 8
+        for x = b.x_min + 8, b.x_max - 8, step do
+            -- Sud : 2e cellule depuis z_min (z_min + 1), 1 marge crénelée évitée
+            core.set_node({ x = x, y = ty, z = b.z_min + 1 },
+                { name = torch_floor, param2 = 1 })
+            -- Nord : 2e cellule depuis z_max
+            core.set_node({ x = x, y = ty, z = b.z_max - 1 },
+                { name = torch_floor, param2 = 1 })
+        end
+        for z = b.z_min + 8, b.z_max - 8, step do
+            core.set_node({ x = b.x_min + 1, y = ty, z = z },
+                { name = torch_floor, param2 = 1 })
+            core.set_node({ x = b.x_max - 1, y = ty, z = z },
+                { name = torch_floor, param2 = 1 })
+        end
+        -- Sommet des 4 tours : torche centrale (y = tower_top + 2)
+        for _, t in pairs(towers) do
+            local cx = math.floor((t.x_min + t.x_max) / 2)
+            local cz = math.floor((t.z_min + t.z_max) / 2)
+            core.set_node({ x = cx, y = tower_top + 2, z = cz },
+                { name = torch_floor, param2 = 1 })
+        end
+    end
+
+    -- ---------- 8c. Torches murales sur face EXTÉRIEURE du rempart ----------
+    -- Ambiance nocturne hors enceinte. Wallmounted param2 :
+    -- 2 = -X wall, 3 = +X wall, 4 = -Z wall, 5 = +Z wall
+    -- Posées à 2 hauteurs (y_min+3 et y_min+6) pour effet visuel.
+    if core.registered_nodes[torch_wall] then
+        local step = 12
+        -- Cellules d'air collées à l'extérieur du mur
+        local oz_s = b.z_min - 1   -- air, mur au nord (+Z direction depuis torche)
+        local oz_n = b.z_max + 1
+        local ox_w = b.x_min - 1
+        local ox_e = b.x_max + 1
+        for _, ty in ipairs({ b.y_min + 3, b.y_min + 6 }) do
+            for x = b.x_min + 12, b.x_max - 12, step do
+                core.set_node({ x = x, y = ty, z = oz_s },
+                    { name = torch_wall, param2 = 5 })
+                core.set_node({ x = x, y = ty, z = oz_n },
+                    { name = torch_wall, param2 = 4 })
+            end
+            for z = b.z_min + 12, b.z_max - 12, step do
+                core.set_node({ x = ox_w, y = ty, z = z },
+                    { name = torch_wall, param2 = 3 })
+                core.set_node({ x = ox_e, y = ty, z = z },
+                    { name = torch_wall, param2 = 2 })
+            end
+        end
+    end
+
+    -- ---------- 8d. Poteaux-torches extérieurs (fence + torche au sommet) ------
+    -- Plantés à 4 blocs des murs E/W/S (safe, hors trajectoire ennemis nord).
+    -- Hauteur 4 fences, torche au sommet → halo à y = b.y_min + 5.
+    local fence = "default:fence_wood"
+    if core.registered_nodes[fence] and core.registered_nodes[torch_floor] then
+        local function plant_post(x, z)
+            for dy = 0, 3 do
+                core.set_node({ x = x, y = b.y_min + dy, z = z },
+                    { name = fence })
+            end
+            core.set_node({ x = x, y = b.y_min + 4, z = z },
+                { name = torch_floor, param2 = 1 })
+        end
+        local offs = 4
+        local step = 20
+        -- Sud (sûr, pas d'ennemis) : ligne z = z_min - offs
+        for x = b.x_min + 6, b.x_max - 6, step do
+            plant_post(x, b.z_min - offs)
+        end
+        -- Ouest / Est : ligne x = x_min/x_max - offs, sur toute la longueur
+        for z = b.z_min + 6, b.z_max - 6, step do
+            plant_post(b.x_min - offs, z)
+            plant_post(b.x_max + offs, z)
+        end
+        -- 4 poteaux d'angle plus grands (8 hauts) pour marquer les coins
+        local corners = {
+            { x = b.x_min - offs, z = b.z_min - offs },
+            { x = b.x_max + offs, z = b.z_min - offs },
+            { x = b.x_min - offs, z = b.z_max + offs },
+            { x = b.x_max + offs, z = b.z_max + offs },
+        }
+        for _, c in ipairs(corners) do
+            for dy = 0, 7 do
+                core.set_node({ x = c.x, y = b.y_min + dy, z = c.z },
+                    { name = fence })
+            end
+            core.set_node({ x = c.x, y = b.y_min + 8, z = c.z },
+                { name = torch_floor, param2 = 1 })
+        end
+    end
+
     storage:set_int("built", 1)
     core.log("action", "[tgw_wall] built enceinte 150×150 thick=" .. thick ..
-        " + 4 tours + échelle SW + torches")
+        " + 4 tours + échelle SW + torches (intérieur+couronne+extérieur+poteaux)")
 end
 
 -- ---------------------------------------------------------------------------
