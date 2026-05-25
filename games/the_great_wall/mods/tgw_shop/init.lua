@@ -160,22 +160,10 @@ tgw_shop.catalogues.materials = {
     },
     {
         id = "repair_door", label = "Repair Door (full)", cost = 80, wallet = "shared",
-        icon_item = "tgw_house:door",
+        icon_item = "doors:door_wood",
         effect = function()
-            if not tgw_house then return false end
-            -- Reset porte à HP max via damage négatif n'existe pas → set direct
-            local dp = tgw_map.get_door_pos()
-            local nodes = {
-                dp,
-                { x = dp.x, y = dp.y + 1, z = dp.z },
-            }
-            for _, p in ipairs(nodes) do
-                if core.get_node(p).name == "air" then
-                    core.set_node(p, { name = "tgw_house:door" })
-                end
-                core.get_meta(p):set_int("hp", tgw_core.config.door_hp)
-            end
-            return true
+            if not (tgw_house and tgw_house.repair_door_full) then return false end
+            return tgw_house.repair_door_full()
         end,
     },
 }

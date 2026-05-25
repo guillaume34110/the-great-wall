@@ -1003,10 +1003,16 @@ core.register_on_player_receive_fields(function(player, formname, fields)
     return true
 end)
 
--- Workbench : node placé dans la maison, right-click = ouvre loadout.
--- Right-click sur arme = libre (ouverture porte/etc.), plus de hijack.
-core.register_node("tgw_combat:workbench", {
-    description = S("Weapon Workbench"),
+-- Table d'upgrade dédiée : right-click/punch => loadout accessoires.
+-- Important : les armes n'ouvrent jamais le menu au click droit.
+local function open_upgrade_table(clicker)
+    if clicker and clicker:is_player() then
+        tgw_combat.show_loadout(clicker)
+    end
+end
+
+core.register_node("tgw_combat:craft_table", {
+    description = S("Weapon Upgrade Table"),
     tiles = {
         "default_steel_block.png^[colorize:#222222:150",
         "default_steel_block.png^[colorize:#222222:150",
@@ -1022,26 +1028,12 @@ core.register_node("tgw_combat:workbench", {
     sounds = default.node_sound_metal_defaults(),
     can_dig = function() return false end,
     on_blast = function() end,
-    on_rightclick = function(_, _, clicker)
-        if clicker and clicker:is_player() then
-            tgw_combat.show_loadout(clicker)
-        end
-    end,
-    on_punch = function(_, _, puncher)
-        if puncher and puncher:is_player() then
-            tgw_combat.show_loadout(puncher)
-        end
-    end,
+    on_rightclick = function(_, _, clicker) open_upgrade_table(clicker) end,
+    on_punch = function(_, _, puncher) open_upgrade_table(puncher) end,
 })
 
-core.register_chatcommand("loadout", {
-    description = "Open weapon loadout (equip accessories)",
-    func = function(name)
-        local p = core.get_player_by_name(name)
-        if p then tgw_combat.show_loadout(p) end
-        return true
-    end,
-})
+-- Compat monde existant : anciennes tables "workbench" deviennent craft_table.
+core.register_alias_force("tgw_combat:workbench", "tgw_combat:craft_table")
 
 do
     local wcount, acount = 0, 0

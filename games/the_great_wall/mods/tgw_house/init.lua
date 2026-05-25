@@ -102,23 +102,35 @@ end
 
 tgw_house.place_real_door = place_real_door
 
--- Workbench position
-local function workbench_pos()
+-- Position de la table d'upgrade d'armes
+local function upgrade_table_pos()
     local hp = tgw_map.get_house_pos()
     return { x = hp.x - 2, y = hp.y, z = hp.z }
 end
 
-local function place_workbench()
-    if not core.registered_nodes["tgw_combat:workbench"] then return end
-    local p = workbench_pos()
-    local cur = core.get_node(p).name
-    if cur == "tgw_combat:workbench" then return end
-    if cur == "ignore" then return end
-    core.set_node(p, { name = "tgw_combat:workbench" })
-    core.log("action", "[tgw_house] workbench placed @ " .. core.pos_to_string(p))
+local function get_upgrade_table_node()
+    if core.registered_nodes["tgw_combat:craft_table"] then
+        return "tgw_combat:craft_table"
+    end
+    if core.registered_nodes["tgw_combat:workbench"] then
+        return "tgw_combat:workbench"
+    end
+    return nil
 end
 
-tgw_house.place_workbench = place_workbench
+local function place_upgrade_table()
+    local node_name = get_upgrade_table_node()
+    if not node_name then return end
+    local p = upgrade_table_pos()
+    local cur = core.get_node(p).name
+    if cur == "tgw_combat:craft_table" or cur == "tgw_combat:workbench" then return end
+    if cur == "ignore" then return end
+    core.set_node(p, { name = node_name })
+    core.log("action", "[tgw_house] upgrade table placed @ " .. core.pos_to_string(p))
+end
+
+tgw_house.place_upgrade_table = place_upgrade_table
+tgw_house.place_workbench = place_upgrade_table -- compat API
 
 -- Migration robuste : emerge + retry jusqu'à ce que le chunk soit chargé
 local function ensure_house_extras(retries)
@@ -136,7 +148,7 @@ local function ensure_house_extras(retries)
         return
     end
     place_real_door()
-    place_workbench()
+    place_upgrade_table()
 end
 
 tgw_house.ensure_extras = ensure_house_extras
@@ -168,7 +180,7 @@ core.after(3.0, function() ensure_house_extras() end)
 
 -- Chat command de secours
 core.register_chatcommand("fix_house", {
-    description = "Force door + workbench placement",
+    description = "Force door + upgrade table placement",
     privs = { server = true },
     func = function(name)
         ensure_house_extras()
@@ -291,6 +303,14 @@ function tgw_house.damage_door(amount)
     end
     door_set_hp(hp)
     tgw_core.emit("door_damaged", { hp_left = hp, dmg = amount, destroyed = false })
+end
+
+function tgw_house.repair_door_full()
+    door_set_hp(DOOR_HP)
+    storage:set_string("door_init", "1")
+    place_real_door()
+    tgw_core.emit("door_damaged", { hp_left = DOOR_HP, dmg = 0, destroyed = false })
+    return true
 end
 
 function tgw_house.get_door_hp()

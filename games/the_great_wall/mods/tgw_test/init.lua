@@ -92,6 +92,8 @@ core.after(3.0, function()
     local bat_dmg = bat_def and bat_def.tool_capabilities
         and bat_def.tool_capabilities.damage_groups or {}
     check("bat.engine_dmg=0", next(bat_dmg) == nil)
+    check("combat.craft_table.node",
+        core.registered_nodes["tgw_combat:craft_table"] ~= nil)
 
     local expected_accs = {
         "ext_barrel", "supp", "ext_mag", "drum",
@@ -156,6 +158,9 @@ core.after(3.0, function()
     -- ---------------------------------------------------------------------
     -- Done
     -- ---------------------------------------------------------------------
+    check("house.repair_door_full_api",
+        tgw_house and type(tgw_house.repair_door_full) == "function")
+
     core.log("action", "[TGW_TEST] === DONE : " ..
         results.pass .. " PASS / " .. results.fail .. " FAIL ===")
 end)
